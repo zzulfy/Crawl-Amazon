@@ -22,7 +22,11 @@ class BookInfo:
     description: Optional[str] = None  # 简介
     used_price_gb: Optional[str] = None  # 二手书售价(英镑)
     used_price_cny: Optional[str] = None  # 二手书售价(人民币)
-    source_urls: dict = field(default_factory=dict)  # 数据来源URL
+    source_urls: dict = field(default_factory=lambda: {
+        'goodreads': None,
+        'abebooks': None,
+        'amazon_uk': None
+    })  # 数据来源URL
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -40,10 +44,14 @@ class BookInfo:
     def merge(self, other: 'BookInfo') -> 'BookInfo':
         """合并另一个BookInfo的信息（用于多源数据合并）"""
         for key in self.to_dict():
+            if key == 'source_urls':
+                continue  # 单独处理
             if not getattr(self, key) and getattr(other, key):
                 setattr(self, key, getattr(other, key))
-        # 合并来源URL
-        self.source_urls.update(other.source_urls)
+        # 合并来源URL - 只更新有实际URL的
+        for k, v in other.source_urls.items():
+            if v is not None:
+                self.source_urls[k] = v
         return self
 
 

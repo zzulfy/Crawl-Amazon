@@ -20,27 +20,30 @@ class GoodreadsScraper(BaseScraper):
 
     def search_by_isbn(self, isbn: str) -> Optional[BookInfo]:
         """通过ISBN搜索书籍"""
-        # Goodreads可以通过ISBN直接访问书籍页面
+        # Goodreads 搜索会自动重定向到书籍页面
         url = f"{self.base_url}/search?q={isbn}"
         logger.info(f"Goodreads: 搜索ISBN {isbn}")
 
-        soup = self.fetch_page(url)
-        if not soup:
+        response = self._fetch_response(url)
+        if not response:
             return None
 
-        # 查找书籍链接
+        final_url = response.url
+        soup = BeautifulSoup(response.text, 'lxml')
+
+        # 检查是否直接重定向到书籍页面
+        if '/book/show/' in final_url:
+            logger.info(f"Goodreads: 直接找到书籍页面")
+            return self._parse_book_page(soup, isbn, final_url)
+
+        # 如果在搜索结果页面，查找书籍链接
         book_link = soup.select_one('a.bookTitle')
         if book_link:
             book_url = self.base_url + book_link.get('href', '')
             random_delay(1, 2)
             return self.get_book_details(book_url, isbn)
 
-        # 尝试直接ISBN URL
-        direct_url = f"{self.base_url}/isbn/{isbn}"
-        soup = self.fetch_page(direct_url)
-        if soup:
-            return self._parse_book_page(soup, isbn, direct_url)
-
+        logger.warning(f"Goodreads: 未找到ISBN {isbn}")
         return None
 
     def get_book_details(self, url: str, isbn: str = None) -> Optional[BookInfo]:

@@ -46,20 +46,25 @@ class BookCrawler:
             amazon_book = self.amazon.search_by_isbn(isbn)
             if amazon_book:
                 book = book.merge(amazon_book)
-                random_delay(2, 4)
+            else:
+                book.source_urls['amazon_uk'] = None
+            random_delay(2, 4)
         except Exception as e:
             logger.error(f"Amazon UK 爬取失败: {e}")
+            book.source_urls['amazon_uk'] = None
 
-        # 2. 从Goodreads获取补充信息
-        if not book.is_complete():
-            logger.info("正在从 Goodreads 获取信息...")
-            try:
-                gr_book = self.goodreads.search_by_isbn(isbn)
-                if gr_book:
-                    book = book.merge(gr_book)
-                    random_delay(2, 4)
-            except Exception as e:
-                logger.error(f"Goodreads 爬取失败: {e}")
+        # 2. 从Goodreads获取补充信息（始终调用以获取source_url）
+        logger.info("正在从 Goodreads 获取信息...")
+        try:
+            gr_book = self.goodreads.search_by_isbn(isbn)
+            if gr_book:
+                book = book.merge(gr_book)
+            else:
+                book.source_urls['goodreads'] = None
+            random_delay(2, 4)
+        except Exception as e:
+            logger.error(f"Goodreads 爬取失败: {e}")
+            book.source_urls['goodreads'] = None
 
         # 3. 从AbeBooks获取二手书价格和补充信息
         logger.info("正在从 AbeBooks 获取信息...")
@@ -70,9 +75,12 @@ class BookCrawler:
                 if abe_book.used_price_gb and not book.used_price_gb:
                     book.used_price_gb = abe_book.used_price_gb
                 book = book.merge(abe_book)
-                random_delay(2, 4)
+            else:
+                book.source_urls['abebooks'] = None
+            random_delay(2, 4)
         except Exception as e:
             logger.error(f"AbeBooks 爬取失败: {e}")
+            book.source_urls['abebooks'] = None
 
         # 下载封面图片
         if book.cover_url and not book.local_cover_path:
@@ -135,13 +143,24 @@ class BookCrawler:
         print(f"装帧: {book.binding or '未知'}")
         print(f"页数: {book.pages or '未知'}")
         print(f"二手价格: {book.used_price_gb or '未知'}")
+        # 显示数据来源状态
+        status_str = ", ".join([
+            f"{k}: {'✓' if v else '✗'}"
+            for k, v in book.source_urls.items()
+        ])
+        print(f"数据来源: {status_str}")
         print("=" * 60 + "\n")
 
     def save_results(self, results: Dict[str, BookInfo], filename: str = None):
         """保存结果到文件"""
         if filename is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"books_{timestamp}"
+            # 使用 ISBN 作为文件名
+            isbns = list(results.keys())
+            if len(isbns) == 1:
+                filename = f"book_{isbns[0]}"
+            else:
+                # 多个ISBN时，用第一个 + 数量
+                filename = f"book_{isbns[0]}_{len(isbns)}books"
 
         # 保存JSON
         json_path = os.path.join(self.output_dir, f"{filename}.json")
@@ -230,6 +249,25 @@ class BookCrawler:
         self.amazon.close()
 
 
+def print_book_summary(book: BookInfo):
+    """打印书籍摘要（独立函数）"""
+    print("\n" + "=" * 60)
+    print(f"ISBN: {book.isbn}")
+    print(f"书名: {book.title or '未知'}")
+    print(f"作者: {book.author or '未知'}")
+    print(f"出版商: {book.publisher or '未知'}")
+    print(f"装帧: {book.binding or '未知'}")
+    print(f"页数: {book.pages or '未知'}")
+    print(f"二手价格: {book.used_price_gb or '未知'}")
+    # 显示数据来源状态
+    status_str = ", ".join([
+        f"{k}: {'✓' if v else '✗'}"
+        for k, v in book.source_urls.items()
+    ])
+    print(f"数据来源: {status_str}")
+    print("=" * 60 + "\n")
+
+
 def load_isbns_from_file(filepath: str) -> List[str]:
     """从文件加载ISBN列表"""
     isbns = []
@@ -272,6 +310,21 @@ def main():
         action='store_true',
         help='显示详细日志'
     )
+    parser.add_argument(
+        '--selenium',
+        action='store_true',
+        help='使用Selenium模式（可处理JS渲染页面，需要安装selenium和chromium-browser）'
+    )
+    parser.add_argument(
+        '--no-headless',
+        action='store_true',
+        help='Selenium模式下显示浏览器窗口（默认无头模式）'
+    )
+    parser.add_argument(
+        '--no-cover',
+        action='store_true',
+        help='不下载封面图片'
+    )
 
     args = parser.parse_args()
 
@@ -291,6 +344,7 @@ def main():
         print("  python main.py 9781845614652 9780710507389")
         print("  python main.py -f isbns.txt")
         print("  python main.py 9781845614652 -o my_output")
+        print("  python main.py --selenium 9781845614652")
         sys.exit(1)
 
     # 去重
@@ -300,22 +354,60 @@ def main():
         print(f"  - {isbn}")
     print()
 
-    # 开始爬取
-    crawler = BookCrawler(output_dir=args.output)
-    try:
-        results = crawler.crawl_isbns(isbns, skip_edition_check=args.skip_edition_check)
-        crawler.save_results(results)
+    # Selenium 模式
+    if args.selenium:
+        try:
+            from crawler_selenium import SeleniumCrawler, check_selenium_available
 
-        # 打印统计
-        print("\n爬取完成!")
-        print(f"成功: {sum(1 for b in results.values() if b.title)}/{len(results)}")
+            if not check_selenium_available():
+                print("错误: Selenium 未安装")
+                print("请运行: pip install selenium")
+                sys.exit(1)
 
-    except KeyboardInterrupt:
-        print("\n用户中断，正在保存已爬取的数据...")
-        if 'results' in locals():
+            print("使用 Selenium 模式（可处理 JS 渲染页面）")
+            selenium_crawler = SeleniumCrawler(headless=not args.no_headless)
+
+            try:
+                results = {}
+                for i, isbn in enumerate(isbns, 1):
+                    print(f"\n进度: {i}/{len(isbns)}")
+                    book = selenium_crawler.scrape_all(isbn)
+                    results[isbn] = book
+                    print_book_summary(book)
+
+                    if i < len(isbns):
+                        random_delay(3, 5)
+
+                # 保存结果
+                crawler = BookCrawler(output_dir=args.output)
+                crawler.save_results(results)
+                print(f"\n爬取完成! 成功: {sum(1 for b in results.values() if b.title)}/{len(results)}")
+
+            finally:
+                selenium_crawler.close()
+
+        except ImportError as e:
+            print(f"错误: {e}")
+            print("请运行: pip install selenium webdriver-manager")
+            sys.exit(1)
+
+    else:
+        # 普通模式
+        crawler = BookCrawler(output_dir=args.output)
+        try:
+            results = crawler.crawl_isbns(isbns, skip_edition_check=args.skip_edition_check)
             crawler.save_results(results)
-    finally:
-        crawler.close()
+
+            # 打印统计
+            print("\n爬取完成!")
+            print(f"成功: {sum(1 for b in results.values() if b.title)}/{len(results)}")
+
+        except KeyboardInterrupt:
+            print("\n用户中断，正在保存已爬取的数据...")
+            if 'results' in locals():
+                crawler.save_results(results)
+        finally:
+            crawler.close()
 
 
 if __name__ == '__main__':

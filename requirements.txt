@@ -6,3 +6,6 @@ fake-useragent>=1.4.0
 python-dotenv>=1.0.0
 openpyxl>=3.1.0
 Pillow>=10.0.0
+
+# 可选：Selenium 模式（用于 JS 渲染页面）
+# selenium>=4.15.0
