@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 # 创建UserAgent实例
 _ua = None
 
+# 全局代理池实例
+_proxy_pool = None
+
 
 def get_user_agent() -> str:
     """获取随机User-Agent"""
@@ -67,11 +70,70 @@ PROXIES = {
     # 'https': 'http://127.0.0.1:7890',
 }
 
+# 代理池配置（优先使用代理池）
+PROXY_POOL_ENABLED = False
+
+
+def init_proxy_pool(config=None):
+    """初始化代理池"""
+    global _proxy_pool, PROXY_POOL_ENABLED
+    try:
+        from proxy import ProxyPool, ProxyConfig
+        if config is None:
+            config = ProxyConfig(enabled=True)
+        _proxy_pool = ProxyPool(config)
+        if _proxy_pool.initialize():
+            PROXY_POOL_ENABLED = True
+            logger.info(f"代理池已启用: {_proxy_pool}")
+        else:
+            logger.warning("代理池初始化失败，将使用默认设置")
+    except Exception as e:
+        logger.warning(f"代理池初始化异常: {e}")
+
 
 def get_proxies() -> Optional[dict]:
-    """获取代理设置"""
+    """获取代理设置（优先使用代理池）"""
+    global _proxy_pool, PROXY_POOL_ENABLED
+
+    # 优先使用代理池
+    if PROXY_POOL_ENABLED and _proxy_pool:
+        proxies_dict = _proxy_pool.get_proxies_dict()
+        if proxies_dict:
+            return proxies_dict
+
+    # 使用静态代理配置
     if PROXIES and any(PROXIES.values()):
         return PROXIES
+    return None
+
+
+def get_current_proxy():
+    """获取当前使用的代理对象"""
+    global _proxy_pool, PROXY_POOL_ENABLED
+    if PROXY_POOL_ENABLED and _proxy_pool:
+        return _proxy_pool.get_proxy()
+    return None
+
+
+def report_proxy_success(proxy, response_time: float = 0):
+    """报告代理使用成功"""
+    global _proxy_pool, PROXY_POOL_ENABLED
+    if PROXY_POOL_ENABLED and _proxy_pool and proxy:
+        _proxy_pool.report_success(proxy, response_time)
+
+
+def report_proxy_failure(proxy, error: str = ""):
+    """报告代理使用失败"""
+    global _proxy_pool, PROXY_POOL_ENABLED
+    if PROXY_POOL_ENABLED and _proxy_pool and proxy:
+        _proxy_pool.report_failure(proxy, error)
+
+
+def get_proxy_pool_stats():
+    """获取代理池统计信息"""
+    global _proxy_pool, PROXY_POOL_ENABLED
+    if PROXY_POOL_ENABLED and _proxy_pool:
+        return _proxy_pool.get_stats()
     return None
 
 

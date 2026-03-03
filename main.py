@@ -325,12 +325,54 @@ def main():
         action='store_true',
         help='不下载封面图片'
     )
+    parser.add_argument(
+        '--proxy',
+        action='store_true',
+        help='启用代理池（需要先配置 proxies.txt 文件）'
+    )
+    parser.add_argument(
+        '--proxy-file',
+        default='proxies.txt',
+        help='代理文件路径（默认: proxies.txt）'
+    )
+    parser.add_argument(
+        '--proxy-api',
+        help='代理API URL（付费代理服务）'
+    )
+    parser.add_argument(
+        '--proxy-strategy',
+        choices=['round_robin', 'random', 'failover'],
+        default='round_robin',
+        help='代理轮换策略（默认: round_robin）'
+    )
 
     args = parser.parse_args()
 
     # 设置日志级别
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
+
+    # 初始化代理池
+    if args.proxy:
+        try:
+            from proxy import ProxyConfig
+            from utils import init_proxy_pool, get_proxy_pool_stats
+
+            proxy_config = ProxyConfig(
+                enabled=True,
+                proxy_file=args.proxy_file,
+                api_url=args.proxy_api,
+                strategy=args.proxy_strategy,
+            )
+            init_proxy_pool(proxy_config)
+
+            # 打印代理池状态
+            stats = get_proxy_pool_stats()
+            if stats:
+                print(f"代理池状态: {stats['alive_proxies']}/{stats['total_proxies']} 个可用代理")
+        except Exception as e:
+            print(f"警告: 代理池初始化失败: {e}")
+            print("将不使用代理")
 
     # 收集ISBN
     isbns = list(args.isbns)

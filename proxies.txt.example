@@ -1,0 +1,21 @@
+# 代理配置文件
+# 格式: protocol://[user:pass@]host:port
+# 支持的协议: http, https, socks5
+
+# HTTP 代理示例
+# http://192.168.1.1:8080
+# http://user:password@proxy.example.com:3128
+
+# HTTPS 代理示例
+# https://proxy.example.com:443
+
+# SOCKS5 代理示例
+# socks5://127.0.0.1:1080
+
+# 付费代理服务示例（如 Luminati, Smartproxy 等）
+# http://lum-customer-CUSTOMER-zone-ZONE:PASSWORD@zproxy.lum-superproxy.io:22225
+
+# 使用方法:
+# 1. 将此文件复制为 proxies.txt
+# 2. 填入你的代理地址
+# 3. 运行: python main.py --proxy 9781845614652

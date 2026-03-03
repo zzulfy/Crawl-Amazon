@@ -7,6 +7,7 @@
 - 支持通过 ISBN 爬取三个网站的书籍信息
 - 自动合并多来源数据，获取最完整的信息
 - 支持普通模式和 Selenium 模式（可处理 JS 渲染页面）
+- **支持代理池（IP 轮换防封禁）**
 - 记录所有数据来源 URL（`source_urls` 字段）
 - 检测同码不同款的情况
 - 自动下载封面图片
@@ -173,9 +174,54 @@ output/
 
 `source_urls` 字段会显示每个来源的 URL，如果该网站没有找到数据则显示 `null`。
 
-## 代理配置
+## 代理池配置
 
-如需使用代理，编辑 `utils.py` 文件：
+### 方式 1：使用代理池（推荐）
+
+支持从文件加载或 API 获取代理，自动轮换和健康检查。
+
+```bash
+# 1. 创建代理配置文件
+cp proxies.txt.example proxies.txt
+
+# 2. 编辑 proxies.txt，填入你的代理
+# 格式: protocol://[user:pass@]host:port
+http://192.168.1.1:8080
+http://user:password@proxy.example.com:3128
+socks5://127.0.0.1:1080
+
+# 3. 使用代理池运行
+python main.py --proxy 9781845614652
+
+# 指定代理文件
+python main.py --proxy --proxy-file my_proxies.txt 9781845614652
+
+# 使用付费代理 API
+python main.py --proxy --proxy-api "https://api.proxy-service.com/get?key=xxx" 9781845614652
+
+# 指定轮换策略
+python main.py --proxy --proxy-strategy random 9781845614652
+```
+
+### 代理轮换策略
+
+| 策略 | 说明 |
+|------|------|
+| `round_robin` | 顺序轮换（默认） |
+| `random` | 随机选择 |
+| `failover` | 失败后自动切换 |
+
+### 付费代理服务推荐
+
+| 服务商 | 特点 | 价格 |
+|--------|------|------|
+| [Luminati](https://luminati.io) | 住宅代理，最稳定 | $$ |
+| [Smartproxy](https://smartproxy.com) | 性价比较高 | $ |
+| [IP2Proxy](https://www.ip2proxy.com) | 支持按量付费 | $ |
+
+### 方式 2：静态代理
+
+如只需单个代理，编辑 `utils.py` 文件：
 
 ```python
 PROXIES = {
